@@ -22,7 +22,7 @@ import type {
 } from '@github/copilot-sdk';
 
 import type { CopilotSettings, CopilotModelId, CopilotLogger } from './types.js';
-import { convertMessages } from './convert-messages.js';
+import { convertMessages, extractLastUserMessage } from './convert-messages.js';
 import { mapFinishReason } from './map-finish-reason.js';
 import { createAuthError, createSDKError, createTimeoutError, isAuthError } from './errors.js';
 import { getLogger } from './logger.js';
@@ -81,6 +81,7 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     // Per-call system prompt (from V3 messages) takes precedence over settings
     const systemPromptValue = runtimeSystemPrompt ?? this.settings.systemPrompt;
     const config: SessionConfig = {
+      streaming: true,
       onPermissionRequest: this.settings.onPermissionRequest ?? approveAll,
       ...(this.settings.onUserInputRequest && {
         onUserInputRequest: this.settings.onUserInputRequest,
@@ -106,13 +107,17 @@ export class CopilotLanguageModel implements LanguageModelV3 {
   private async createClientAndSession(runtimeSystemPrompt?: string): Promise<{
     client: CopilotClient;
     session: CopilotSession;
+    resumed: boolean;
   }> {
     const token = this.getToken();
-    this.logger.debug(`Creating CopilotClient (cwd: ${this.settings.cwd ?? 'inherit'})`);
+    this.logger.debug(
+      `Creating CopilotClient (cwd: ${this.settings.cwd ?? 'inherit'}, cliUrl: ${this.settings.cliUrl ?? 'none'})`
+    );
 
     const clientOptions = {
       ...this.settings.clientOptions,
       ...(this.settings.cwd && { cwd: this.settings.cwd }),
+      ...(this.settings.cliUrl && { cliUrl: this.settings.cliUrl }),
       env: {
         ...process.env,
         GITHUB_TOKEN: token,
@@ -121,13 +126,39 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     };
 
     const client = new CopilotClient(clientOptions);
+
+    // If sessionId is set, try to resume an existing session first
+    if (this.settings.sessionId) {
+      try {
+        this.logger.debug(`Attempting to resume session: ${this.settings.sessionId}`);
+        const session = await (client as any).resumeSession(this.settings.sessionId);
+        this.logger.info(`Session resumed: ${session.sessionId}`);
+        return { client, session, resumed: true };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        // Only fall back to create on "not found" style errors.
+        // Propagate auth, transport, and other real failures.
+        const isNotFound = /not found|does not exist|no such session|ENOENT/i.test(msg);
+        if (!isNotFound) {
+          this.logger.error(`Resume failed with non-recoverable error: ${msg}`);
+          throw e;
+        }
+        this.logger.debug(`Session not found, creating new session with ID: ${this.settings.sessionId}`);
+      }
+    }
+
     const sessionConfig = this.buildSessionConfig(runtimeSystemPrompt);
+
+    // Include sessionId in session config for persistence
+    if (this.settings.sessionId) {
+      (sessionConfig as any).sessionId = this.settings.sessionId;
+    }
 
     this.logger.debug(`Creating session (model: ${this.modelId})`);
     const session = await client.createSession(sessionConfig);
     this.logger.info(`Session created: ${session.sessionId}`);
 
-    return { client, session };
+    return { client, session, resumed: false };
   }
 
   private generateWarnings(options: DoGenerateOptions | DoStreamOptions): SharedV3Warning[] {
@@ -158,8 +189,10 @@ export class CopilotLanguageModel implements LanguageModelV3 {
   async doGenerate(options: DoGenerateOptions): Promise<DoGenerateResult> {
     this.logger.debug('doGenerate: starting');
 
-    const { prompt: promptStr, systemPrompt, warnings: convWarnings } =
+    // Always extract full conversion (needed for system prompt on new sessions)
+    const fullConversion =
       convertMessages(options.prompt as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    const { systemPrompt, warnings: convWarnings } = fullConversion;
 
     const warnings = this.generateWarnings(options);
     convWarnings.forEach(w => warnings.push({ type: 'other', message: w }));
@@ -167,11 +200,19 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     let client: CopilotClient | undefined;
     let session: CopilotSession | undefined;
     let text = '';
+    let promptStr = '';
     let usage: LanguageModelV3Usage = createEmptyUsage();
     let finishReason: LanguageModelV3FinishReason = { unified: 'stop', raw: undefined };
 
     try {
-      ({ client, session } = await this.createClientAndSession(systemPrompt));
+      let resumed: boolean;
+      ({ client, session, resumed } = await this.createClientAndSession(systemPrompt));
+
+      // If session was resumed, only send the last user message (SDK has history)
+      const useLastOnly = this.settings.lastMessageOnly ?? resumed;
+      promptStr = useLastOnly
+        ? extractLastUserMessage(options.prompt as any).prompt // eslint-disable-line @typescript-eslint/no-explicit-any
+        : fullConversion.prompt;
 
       // Collect text from events
       const unsub = session.on('assistant.message_delta', (evt) => {
@@ -212,8 +253,9 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     } catch (error) {
       // Auth errors pass through
       if (isAuthError(error)) throw error;
-      // Timeout → throw with context
+      // Timeout → abort in-flight work before cleanup, then throw
       if (error instanceof Error && error.message.includes('timed out')) {
+        if (session) { try { session.abort(); } catch { /* ignore */ } }
         throw createTimeoutError(
           `Copilot session timed out after ${this.settings.maxTurnTimeout ?? 300_000}ms`
         );
@@ -253,8 +295,10 @@ export class CopilotLanguageModel implements LanguageModelV3 {
   async doStream(options: DoStreamOptions): Promise<DoStreamResult> {
     this.logger.debug('doStream: starting');
 
-    const { prompt: promptStr, systemPrompt, warnings: convWarnings } =
+    // Always extract full conversion (needed for system prompt on new sessions)
+    const fullConversion =
       convertMessages(options.prompt as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    const { systemPrompt, warnings: convWarnings } = fullConversion;
 
     const warnings = this.generateWarnings(options);
     convWarnings.forEach(w => warnings.push({ type: 'other', message: w }));
@@ -277,9 +321,15 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           // Emit stream-start
           controller.enqueue({ type: 'stream-start', warnings });
 
-          const { client, session } = await this.createClientAndSession(systemPrompt);
+          const { client, session, resumed } = await this.createClientAndSession(systemPrompt);
           streamClient = client;
           streamSession = session;
+
+          // If session was resumed, only send the last user message (SDK has history)
+          const useLastOnly = this.settings.lastMessageOnly ?? resumed;
+          const promptStr = useLastOnly
+            ? extractLastUserMessage(options.prompt as any).prompt // eslint-disable-line @typescript-eslint/no-explicit-any
+            : fullConversion.prompt;
 
           // ── Wire SDK events → V3 stream parts ──
 
@@ -413,6 +463,8 @@ export class CopilotLanguageModel implements LanguageModelV3 {
         } catch (error) {
           if (error instanceof Error && error.message.includes('timed out')) {
             timedOut = true;
+            // Abort in-flight work so a resumed session isn't left in ambiguous state
+            if (streamSession) { try { streamSession.abort(); } catch { /* ignore */ } }
           } else {
             errored = true;
           }

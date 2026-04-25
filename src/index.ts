@@ -31,7 +31,7 @@ export type {
 } from './types.js';
 
 // Utilities
-export { convertMessages } from './convert-messages.js';
+export { convertMessages, extractLastUserMessage } from './convert-messages.js';
 export type { ConvertedMessages } from './convert-messages.js';
 export { mapFinishReason } from './map-finish-reason.js';
 

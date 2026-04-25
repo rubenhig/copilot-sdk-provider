@@ -90,6 +90,30 @@ export interface CopilotSettings {
   maxTurnTimeout?: number;
 
   /**
+   * URL of a headless Copilot CLI server (e.g., 'localhost:4321').
+   * When set, the client connects via TCP instead of spawning a subprocess.
+   * Start the CLI server with: `copilot --headless --port 4321`
+   */
+  cliUrl?: string;
+
+  /**
+   * Session ID for persistent sessions.
+   * When set, the provider tries to resume an existing session first.
+   * If the session doesn't exist, creates a new one with this ID.
+   * Session state persists across calls via SDK's native persistence.
+   */
+  sessionId?: string;
+
+  /**
+   * When true, only the last user message from the prompt is sent.
+   * When undefined, auto-detected: true if session was successfully resumed.
+   * Use this with `sessionId` for resumed sessions where the SDK
+   * already has the conversation history.
+   * @default undefined (auto-detect)
+   */
+  lastMessageOnly?: boolean;
+
+  /**
    * Additional options passed to `CopilotClient` constructor.
    */
   clientOptions?: Partial<CopilotClientOptions>;

@@ -94,6 +94,37 @@ export function convertMessages(messages: ModelMessage[]): ConvertedMessages {
   return { prompt: parts.join('\n\n'), systemPrompt, warnings };
 }
 
+/**
+ * Extract only the last user message from a Vercel AI SDK prompt array.
+ *
+ * Use this when resuming a persistent Copilot SDK session — the SDK
+ * already has the conversation history, so sending it again would duplicate.
+ * The system prompt is still extracted for use in session creation (if needed).
+ */
+export function extractLastUserMessage(messages: ModelMessage[]): ConvertedMessages {
+  const warnings: string[] = [];
+  let systemPrompt: string | undefined;
+
+  // Extract system messages (needed if creating a new session)
+  const systemMessages = messages.filter(m => m.role === 'system');
+  if (systemMessages.length > 0) {
+    systemPrompt = systemMessages
+      .map(m => extractText(m.content))
+      .join('\n\n');
+  }
+
+  // Find the last user message
+  const userMessages = messages.filter(m => m.role === 'user');
+  const lastUser = userMessages[userMessages.length - 1];
+
+  if (!lastUser) {
+    warnings.push('No user message found in prompt');
+    return { prompt: '', systemPrompt, warnings };
+  }
+
+  return { prompt: extractText(lastUser.content), systemPrompt, warnings };
+}
+
 /** Extract plain text from a message content (string or ContentPart[]). */
 function extractText(content: string | ContentPart[]): string {
   if (typeof content === 'string') return content;
