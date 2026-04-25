@@ -400,7 +400,6 @@ export class CopilotLanguageModel implements LanguageModelV3 {
               toolName,
               input: argsStr,
               providerExecuted: true,
-              dynamic: true,
             } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
           });
 
