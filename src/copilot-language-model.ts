@@ -19,6 +19,7 @@ import { CopilotClient, approveAll } from '@github/copilot-sdk';
 import type {
   CopilotSession,
   SessionConfig,
+  ResumeSessionConfig,
 } from '@github/copilot-sdk';
 
 import type { CopilotSettings, CopilotModelId, CopilotLogger } from './types.js';
@@ -104,6 +105,28 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     return config;
   }
 
+  private buildResumeConfig(runtimeSystemPrompt?: string): ResumeSessionConfig {
+    const systemPromptValue = runtimeSystemPrompt ?? this.settings.systemPrompt;
+    const config: ResumeSessionConfig = {
+      streaming: true,
+      onPermissionRequest: this.settings.onPermissionRequest ?? approveAll,
+      ...(this.settings.onUserInputRequest && {
+        onUserInputRequest: this.settings.onUserInputRequest,
+      }),
+      ...(this.settings.hooks && { hooks: this.settings.hooks }),
+      ...(this.settings.tools && { tools: this.settings.tools }),
+      ...(this.settings.availableTools && { availableTools: this.settings.availableTools }),
+      ...(this.settings.excludedTools && { excludedTools: this.settings.excludedTools }),
+      ...(this.settings.cwd && { workingDirectory: this.settings.cwd }),
+      ...(this.modelId !== 'default' && { model: this.modelId }),
+      ...(this.settings.model && { model: this.settings.model }),
+      ...(systemPromptValue && {
+        systemMessage: { mode: 'replace' as const, content: systemPromptValue },
+      }),
+    };
+    return config;
+  }
+
   private async createClientAndSession(runtimeSystemPrompt?: string): Promise<{
     client: CopilotClient;
     session: CopilotSession;
@@ -131,7 +154,8 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     if (this.settings.sessionId) {
       try {
         this.logger.debug(`Attempting to resume session: ${this.settings.sessionId}`);
-        const session = await (client as any).resumeSession(this.settings.sessionId);
+        const resumeConfig = this.buildResumeConfig(runtimeSystemPrompt);
+        const session = await client.resumeSession(this.settings.sessionId, resumeConfig);
         this.logger.info(`Session resumed: ${session.sessionId}`);
         return { client, session, resumed: true };
       } catch (e) {
@@ -151,7 +175,7 @@ export class CopilotLanguageModel implements LanguageModelV3 {
 
     // Include sessionId in session config for persistence
     if (this.settings.sessionId) {
-      (sessionConfig as any).sessionId = this.settings.sessionId;
+      sessionConfig.sessionId = this.settings.sessionId;
     }
 
     this.logger.debug(`Creating session (model: ${this.modelId})`);
