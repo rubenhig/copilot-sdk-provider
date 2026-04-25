@@ -375,6 +375,7 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           // Errors
           const unsubError = session.on('session.error', (evt) => {
             this.logger.error(`SDK session error: ${evt.data.message}`);
+            errored = true;
             controller.enqueue({
               type: 'error',
               error: createSDKError(evt.data.message),

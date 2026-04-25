@@ -4,14 +4,14 @@
   "description": "Vercel AI SDK provider for GitHub Copilot SDK — use Copilot as a LanguageModelV3",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
@@ -24,7 +24,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src/",
+    "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rimraf dist",
@@ -35,7 +35,7 @@
     "@ai-sdk/provider-utils": "^4.0.1"
   },
   "peerDependencies": {
-    "@github/copilot-sdk": ">=0.1.0",
+    "@github/copilot-sdk": ">=0.1.8 <0.2.0",
     "zod": "^3.0.0 || ^4.0.0"
   },
   "peerDependenciesMeta": {
@@ -55,18 +55,28 @@
   },
   "keywords": [
     "ai",
-    "vercel",
     "ai-sdk",
+    "vercel-ai",
     "provider",
     "copilot",
     "github",
+    "github-copilot",
     "language-model",
     "llm",
-    "agent"
+    "agent",
+    "agentic"
   ],
+  "author": "Rail9000 / DAAI — Siemens Mobility",
+  "homepage": "https://github.com/siemens-mobility-rail9000/copilot-ai-provider#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_ORG/copilot-ai-provider"
+    "url": "git+https://github.com/siemens-mobility-rail9000/copilot-ai-provider.git"
+  },
+  "bugs": {
+    "url": "https://github.com/siemens-mobility-rail9000/copilot-ai-provider/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=18"
