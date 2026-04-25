@@ -14,11 +14,8 @@ export function createAuthError(message: string): Error {
 /**
  * Create a timeout error for sendAndWait exceeding the limit.
  */
-export function createTimeoutError(timeoutMs: number): Error {
-  const error = new Error(
-    `Copilot session timed out after ${timeoutMs}ms. ` +
-    `Increase maxTurnTimeout in settings if the agent needs more time.`
-  );
+export function createTimeoutError(message: string): Error {
+  const error = new Error(message);
   error.name = 'CopilotTimeoutError';
   return error;
 }

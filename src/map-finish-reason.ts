@@ -12,7 +12,7 @@ import type { LanguageModelV3FinishReason } from '@ai-sdk/provider';
  *
  * There's no explicit "finish reason" in the SDK API, so we infer:
  * - Normal completion → 'stop'
- * - Timeout → 'length' (ran out of budget)
+ * - Timeout → 'other' (session timeout, not token limit)
  * - Error → 'error'
  * - Undefined/no response → 'stop' (empty response is still a completion)
  */
@@ -24,8 +24,8 @@ export function mapFinishReason(
   if (errored) {
     return { unified: 'error', raw: 'error' };
   }
-  if (timedOut) {
-    return { unified: 'length', raw: 'timeout' };
+   if (timedOut) {
+    return { unified: 'other', raw: 'timeout' };
   }
   return { unified: 'stop', raw: completed ? 'completed' : 'empty' };
 }

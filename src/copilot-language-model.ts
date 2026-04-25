@@ -24,7 +24,7 @@ import type {
 import type { CopilotSettings, CopilotModelId, CopilotLogger } from './types.js';
 import { convertMessages } from './convert-messages.js';
 import { mapFinishReason } from './map-finish-reason.js';
-import { createAuthError, createSDKError, isAuthError } from './errors.js';
+import { createAuthError, createSDKError, createTimeoutError, isAuthError } from './errors.js';
 import { getLogger } from './logger.js';
 
 // V3 types we need to construct
@@ -77,8 +77,9 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     return token;
   }
 
-  private buildSessionConfig(): SessionConfig {
-    const systemPromptSetting = this.settings.systemPrompt;
+  private buildSessionConfig(runtimeSystemPrompt?: string): SessionConfig {
+    // Per-call system prompt (from V3 messages) takes precedence over settings
+    const systemPromptValue = runtimeSystemPrompt ?? this.settings.systemPrompt;
     const config: SessionConfig = {
       onPermissionRequest: this.settings.onPermissionRequest ?? approveAll,
       ...(this.settings.onUserInputRequest && {
@@ -94,15 +95,15 @@ export class CopilotLanguageModel implements LanguageModelV3 {
       ...(this.settings.cwd && { workingDirectory: this.settings.cwd }),
       ...(this.modelId !== 'default' && { model: this.modelId }),
       ...(this.settings.model && { model: this.settings.model }),
-      ...(systemPromptSetting && {
-        systemMessage: { mode: 'replace' as const, content: systemPromptSetting },
+      ...(systemPromptValue && {
+        systemMessage: { mode: 'replace' as const, content: systemPromptValue },
       }),
       ...this.settings.sessionConfig,
     };
     return config;
   }
 
-  private async createClientAndSession(): Promise<{
+  private async createClientAndSession(runtimeSystemPrompt?: string): Promise<{
     client: CopilotClient;
     session: CopilotSession;
   }> {
@@ -120,7 +121,7 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     };
 
     const client = new CopilotClient(clientOptions);
-    const sessionConfig = this.buildSessionConfig();
+    const sessionConfig = this.buildSessionConfig(runtimeSystemPrompt);
 
     this.logger.debug(`Creating session (model: ${this.modelId})`);
     const session = await client.createSession(sessionConfig);
@@ -157,7 +158,7 @@ export class CopilotLanguageModel implements LanguageModelV3 {
   async doGenerate(options: DoGenerateOptions): Promise<DoGenerateResult> {
     this.logger.debug('doGenerate: starting');
 
-    const { prompt: promptStr, warnings: convWarnings } =
+    const { prompt: promptStr, systemPrompt, warnings: convWarnings } =
       convertMessages(options.prompt as any); // eslint-disable-line @typescript-eslint/no-explicit-any
 
     const warnings = this.generateWarnings(options);
@@ -168,11 +169,9 @@ export class CopilotLanguageModel implements LanguageModelV3 {
     let text = '';
     let usage: LanguageModelV3Usage = createEmptyUsage();
     let finishReason: LanguageModelV3FinishReason = { unified: 'stop', raw: undefined };
-    let timedOut = false;
-    let errored = false;
 
     try {
-      ({ client, session } = await this.createClientAndSession());
+      ({ client, session } = await this.createClientAndSession(systemPrompt));
 
       // Collect text from events
       const unsub = session.on('assistant.message_delta', (evt) => {
@@ -211,19 +210,24 @@ export class CopilotLanguageModel implements LanguageModelV3 {
 
       this.logger.info(`doGenerate: completed (${text.length} chars)`);
     } catch (error) {
+      // Auth errors pass through
       if (isAuthError(error)) throw error;
+      // Timeout → throw with context
       if (error instanceof Error && error.message.includes('timed out')) {
-        timedOut = true;
-      } else {
-        errored = true;
+        throw createTimeoutError(
+          `Copilot session timed out after ${this.settings.maxTurnTimeout ?? 300_000}ms`
+        );
       }
-      this.logger.error(`doGenerate: error — ${error}`);
+      // All other errors → throw
+      throw createSDKError(
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       if (session) await session.disconnect().catch(() => {});
       if (client) await client.stop().catch(() => {});
     }
 
-    finishReason = mapFinishReason(!errored && !timedOut, timedOut, errored);
+    finishReason = mapFinishReason(true, false, false);
 
     return {
       content: [{ type: 'text' as const, text }],
@@ -249,17 +253,20 @@ export class CopilotLanguageModel implements LanguageModelV3 {
   async doStream(options: DoStreamOptions): Promise<DoStreamResult> {
     this.logger.debug('doStream: starting');
 
-    const { prompt: promptStr, warnings: convWarnings } =
+    const { prompt: promptStr, systemPrompt, warnings: convWarnings } =
       convertMessages(options.prompt as any); // eslint-disable-line @typescript-eslint/no-explicit-any
 
     const warnings = this.generateWarnings(options);
     convWarnings.forEach(w => warnings.push({ type: 'other', message: w }));
 
+    // Hoist these so cancel() can access them
+    let streamClient: CopilotClient | undefined;
+    let streamSession: CopilotSession | undefined;
+
     const stream = new ReadableStream<LanguageModelV3StreamPart>({
       start: async (controller) => {
-        let client: CopilotClient | undefined;
-        let session: CopilotSession | undefined;
         let textPartId: string | undefined;
+        let reasoningPartId: string | undefined;
         let toolIdx = 0;
         const toolMap = new Map<string, { callId: string; toolName: string }>();
         let usage: LanguageModelV3Usage = createEmptyUsage();
@@ -270,7 +277,9 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           // Emit stream-start
           controller.enqueue({ type: 'stream-start', warnings });
 
-          ({ client, session } = await this.createClientAndSession());
+          const { client, session } = await this.createClientAndSession(systemPrompt);
+          streamClient = client;
+          streamSession = session;
 
           // ── Wire SDK events → V3 stream parts ──
 
@@ -288,7 +297,6 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           });
 
           // Reasoning / extended thinking
-          let reasoningPartId: string | undefined;
           const unsubReasoning = session.on('assistant.reasoning_delta', (evt) => {
             if (!reasoningPartId) {
               reasoningPartId = generateId();
@@ -339,7 +347,8 @@ export class CopilotLanguageModel implements LanguageModelV3 {
               type: 'tool-result',
               toolCallId: entry.callId,
               toolName: entry.toolName,
-              output: resultStr,
+              result: resultStr,
+              isError: evt.data.success === false,
               providerExecuted: true,
             } as any); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -398,14 +407,6 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           unsubUsage();
           unsubError();
 
-          // Close any open parts
-          if (textPartId) {
-            controller.enqueue({ type: 'text-end', id: textPartId });
-          }
-          if (reasoningPartId) {
-            controller.enqueue({ type: 'reasoning-end', id: reasoningPartId });
-          }
-
           this.logger.info(`doStream: completed (session: ${session.sessionId})`);
 
         } catch (error) {
@@ -416,10 +417,22 @@ export class CopilotLanguageModel implements LanguageModelV3 {
           }
           this.logger.error(`doStream: error — ${error}`);
 
-          if (isAuthError(error)) {
-            controller.enqueue({ type: 'error', error: error as Error });
-          }
+          // Emit error part for all failures (not just auth)
+          controller.enqueue({
+            type: 'error',
+            error: isAuthError(error) ? (error as Error) : createSDKError(
+              error instanceof Error ? error.message : String(error)
+            ),
+          });
         } finally {
+          // Close any open text/reasoning blocks before finish
+          if (textPartId) {
+            controller.enqueue({ type: 'text-end', id: textPartId });
+          }
+          if (reasoningPartId) {
+            controller.enqueue({ type: 'reasoning-end', id: reasoningPartId });
+          }
+
           // Emit finish
           const finishReason = mapFinishReason(!errored && !timedOut, timedOut, errored);
           controller.enqueue({
@@ -428,16 +441,24 @@ export class CopilotLanguageModel implements LanguageModelV3 {
             usage,
             providerMetadata: {
               copilot: {
-                ...(session && { sessionId: session.sessionId }),
+                ...(streamSession && { sessionId: streamSession.sessionId }),
               },
             },
           });
 
           // Clean up
-          if (session) await session.disconnect().catch(() => {});
-          if (client) await client.stop().catch(() => {});
+          if (streamSession) await streamSession.disconnect().catch(() => {});
+          if (streamClient) await streamClient.stop().catch(() => {});
           controller.close();
         }
+      },
+      cancel: async () => {
+        // Abort the SDK session when the consumer cancels the stream
+        if (streamSession) {
+          try { streamSession.abort(); } catch { /* ignore */ }
+          await streamSession.disconnect().catch(() => {});
+        }
+        if (streamClient) await streamClient.stop().catch(() => {});
       },
     });
 
