@@ -1,5 +1,5 @@
 {
-  "name": "copilot-ai-provider",
+  "name": "copilot-sdk-provider",
   "version": "0.1.0",
   "description": "Vercel AI SDK provider for GitHub Copilot SDK — use Copilot as a LanguageModelV3",
   "license": "MIT",
@@ -66,14 +66,14 @@
     "agent",
     "agentic"
   ],
-  "author": "Rail9000 / DAAI — Siemens Mobility",
-  "homepage": "https://github.com/siemens-mobility-rail9000/copilot-ai-provider#readme",
+  "author": "rubenhig",
+  "homepage": "https://github.com/rubenhig/copilot-sdk-provider#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/siemens-mobility-rail9000/copilot-ai-provider.git"
+    "url": "git+https://github.com/rubenhig/copilot-sdk-provider.git"
   },
   "bugs": {
-    "url": "https://github.com/siemens-mobility-rail9000/copilot-ai-provider/issues"
+    "url": "https://github.com/rubenhig/copilot-sdk-provider/issues"
   },
   "publishConfig": {
     "access": "public"

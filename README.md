@@ -1,8 +1,8 @@
-# copilot-ai-provider
+# copilot-sdk-provider
 
 [Vercel AI SDK](https://ai-sdk.dev) community provider for [GitHub Copilot SDK](https://www.npmjs.com/package/@github/copilot-sdk) — use Copilot as a `LanguageModelV3`.
 
-[![npm version](https://img.shields.io/npm/v/copilot-ai-provider.svg)](https://www.npmjs.com/package/copilot-ai-provider)
+[![npm version](https://img.shields.io/npm/v/copilot-sdk-provider.svg)](https://www.npmjs.com/package/copilot-sdk-provider)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![AI SDK v3](https://img.shields.io/badge/AI%20SDK-v3-blue.svg)](https://ai-sdk.dev)
 
@@ -33,7 +33,7 @@ Unlike HTTP-based providers (OpenAI, Anthropic, etc.), this provider communicate
 ## Installation
 
 ```bash
-npm install copilot-ai-provider @github/copilot-sdk ai
+npm install copilot-sdk-provider @github/copilot-sdk ai
 ```
 
 ### Prerequisites
@@ -49,7 +49,7 @@ npm install copilot-ai-provider @github/copilot-sdk ai
 
 ```typescript
 import { generateText } from 'ai';
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 const result = await generateText({
   model: copilot('default'),
@@ -65,7 +65,7 @@ console.log(result.text);
 
 ```typescript
 import { generateText } from 'ai';
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 const result = await generateText({
   model: copilot('default'),
@@ -81,7 +81,7 @@ console.log(result.finishReason); // 'stop'
 
 ```typescript
 import { streamText } from 'ai';
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 const result = streamText({
   model: copilot('default'),
@@ -99,7 +99,7 @@ for await (const chunk of result.textStream) {
 
 ```typescript
 import { generateText } from 'ai';
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 // Via AI SDK's system parameter
 const result = await generateText({
@@ -121,7 +121,7 @@ const result2 = await generateText({
 
 ```typescript
 import { generateText } from 'ai';
-import { createCopilot } from 'copilot-ai-provider';
+import { createCopilot } from 'copilot-sdk-provider';
 
 const myProvider = createCopilot({
   token: process.env.MY_GITHUB_TOKEN,
@@ -141,7 +141,7 @@ const result = await generateText({
 
 ```typescript
 import { generateText } from 'ai';
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 const result = await generateText({
   model: copilot('default'),
@@ -156,7 +156,7 @@ const result = await generateText({
 ### Working Directory
 
 ```typescript
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 
 // Set cwd so Copilot's tools operate on the right project
 const model = copilot('default', { cwd: '/path/to/my/repo' });
@@ -166,7 +166,7 @@ const model = copilot('default', { cwd: '/path/to/my/repo' });
 
 ```typescript
 import { generateText } from 'ai';
-import { createCopilot } from 'copilot-ai-provider';
+import { createCopilot } from 'copilot-sdk-provider';
 import { defineTool } from '@github/copilot-sdk';
 
 const dbQueryTool = defineTool({
@@ -192,7 +192,7 @@ const result = await generateText({
 ### Tool Filtering
 
 ```typescript
-import { createCopilot } from 'copilot-ai-provider';
+import { createCopilot } from 'copilot-sdk-provider';
 
 // Whitelist: only allow specific tools
 const restricted = createCopilot({
@@ -208,7 +208,7 @@ const safe = createCopilot({
 ### Permission & User Input Handlers
 
 ```typescript
-import { createCopilot } from 'copilot-ai-provider';
+import { createCopilot } from 'copilot-sdk-provider';
 
 const provider = createCopilot({
   // Custom permission handler (default: approveAll)
@@ -228,7 +228,7 @@ const provider = createCopilot({
 ### Verbose Logging
 
 ```typescript
-import { createCopilot } from 'copilot-ai-provider';
+import { createCopilot } from 'copilot-sdk-provider';
 
 const provider = createCopilot({
   verbose: true, // Logs to console
@@ -261,7 +261,7 @@ const model = provider.languageModel('default'); // or via .languageModel()
 Default provider instance (reads `GITHUB_TOKEN` from environment).
 
 ```typescript
-import { copilot } from 'copilot-ai-provider';
+import { copilot } from 'copilot-sdk-provider';
 const model = copilot('default');
 ```
 
@@ -299,24 +299,24 @@ const model = copilot('default');
 
 ```typescript
 // Provider
-export { createCopilot, copilot } from 'copilot-ai-provider';
-export type { CopilotProvider, CopilotProviderOptions } from 'copilot-ai-provider';
+export { createCopilot, copilot } from 'copilot-sdk-provider';
+export type { CopilotProvider, CopilotProviderOptions } from 'copilot-sdk-provider';
 
 // Language model
-export { CopilotLanguageModel } from 'copilot-ai-provider';
+export { CopilotLanguageModel } from 'copilot-sdk-provider';
 
 // Types
-export type { CopilotSettings, CopilotModelId, CopilotLogger } from 'copilot-ai-provider';
+export type { CopilotSettings, CopilotModelId, CopilotLogger } from 'copilot-sdk-provider';
 
 // Utilities
-export { convertMessages, mapFinishReason } from 'copilot-ai-provider';
-export { getLogger, consoleLogger, silentLogger } from 'copilot-ai-provider';
+export { convertMessages, mapFinishReason } from 'copilot-sdk-provider';
+export { getLogger, consoleLogger, silentLogger } from 'copilot-sdk-provider';
 
 // Errors
 export {
   createAuthError, createTimeoutError, createSDKError,
   isAuthError, isTimeoutError, isRetryableError,
-} from 'copilot-ai-provider';
+} from 'copilot-sdk-provider';
 ```
 
 ## Architecture
@@ -402,7 +402,7 @@ This is a Copilot SDK behavior, not a limitation of this provider. When the SDK 
 The provider throws typed errors:
 
 ```typescript
-import { isAuthError, isTimeoutError, isRetryableError } from 'copilot-ai-provider';
+import { isAuthError, isTimeoutError, isRetryableError } from 'copilot-sdk-provider';
 
 try {
   const result = await generateText({ model: copilot('default'), prompt: '...' });
@@ -429,13 +429,13 @@ GITHUB_TOKEN=$(gh auth token) npx tsx examples/integration-test.ts
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or PR on the [GitHub repository](https://github.com/siemens-mobility-rail9000/copilot-ai-provider).
+Contributions are welcome! Please open an issue or PR on the [GitHub repository](https://github.com/rubenhig/copilot-sdk-provider).
 
 ### Development
 
 ```bash
-git clone https://github.com/siemens-mobility-rail9000/copilot-ai-provider.git
-cd copilot-ai-provider
+git clone https://github.com/rubenhig/copilot-sdk-provider.git
+cd copilot-sdk-provider
 npm install
 npm run build
 npm test
@@ -450,4 +450,4 @@ npm test
 
 ## License
 
-[MIT](./LICENSE) © Rail9000 / DAAI — Siemens Mobility
+[MIT](./LICENSE) © rubenhig
